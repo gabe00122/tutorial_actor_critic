@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "tutorial-actor-critic"
+version = "0.1.0"
+description = ""
+authors = ["Gabriel keith <gabe.keith@yahoo.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+jax = {extras = ["cpu"], version = "^0.4.26"}
+flax = "^0.8.3"
+optax = "^0.2.2"
+orbax-checkpoint = "^0.5.10"
+gymnasium = {extras = ["classic-control"], version = "^0.29.1"}
+plotly = "^5.22.0"
+pandas = "^2.2.2"
+moviepy = "^1.0.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
