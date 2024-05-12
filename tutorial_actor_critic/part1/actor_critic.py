@@ -4,7 +4,6 @@ from jax.typing import ArrayLike
 from flax import linen as nn
 from optax import Schedule
 from typing import NamedTuple, Any
-import chex
 from dataclasses import dataclass
 from functools import partial
 
@@ -43,7 +42,6 @@ class ActorCritic:
     hyper_parameters: HyperParameters
 
     @partial(jax.jit, static_argnums=(0, 1))
-    @chex.assert_max_traces(n=1)
     def init(self, state_space: int, key: ArrayLike) -> TrainingState:
         dummy_state = jnp.zeros((state_space,), dtype=jnp.float32)
 
@@ -59,7 +57,6 @@ class ActorCritic:
         return training_state
 
     @partial(jax.jit, static_argnums=(0,))
-    @chex.assert_max_traces(n=1)
     def sample_action(
         self, training_state: TrainingState, obs: ArrayLike, key: ArrayLike
     ):
@@ -71,7 +68,6 @@ class ActorCritic:
         return nn.log_softmax(logits)[action]
 
     @partial(jax.jit, static_argnums=(0,))
-    @chex.assert_max_traces(n=1)
     def update_models(
         self, training_state: TrainingState, params: ModelUpdateParams
     ) -> tuple[TrainingState, Metrics]:
