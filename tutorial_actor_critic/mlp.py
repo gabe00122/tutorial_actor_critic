@@ -1,6 +1,6 @@
 from jax import Array, numpy as jnp
 from flax import linen as nn
-from typing import Sequence, Callable
+from collections.abc import Callable, Sequence
 
 
 class MlpBody(nn.Module):

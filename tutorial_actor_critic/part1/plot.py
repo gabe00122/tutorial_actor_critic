@@ -7,7 +7,7 @@ def main():
     results = []
 
     for index in range(20):
-        data = np.load(f"metrics/results_{index}.npy")
+        data = np.load(f"output/metrics/results_{index}.npy")
         results.append(data)
 
     shortest_result = min([len(result) for result in results])
@@ -21,7 +21,7 @@ def main():
     ))
 
     fig = px.line(df, x="episode", y="rewards")
-    fig.write_html("results.html", auto_open=True)
+    fig.write_html("output/plots/results.html", auto_open=True)
 
 
 if __name__ == '__main__':

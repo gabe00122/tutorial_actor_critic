@@ -1,24 +1,26 @@
+from functools import cache
+
 import gymnasium as gym
-from gymnasium.wrappers import RecordVideo
-import jax
-import numpy as np
 import optax
 from flax import linen as nn
 from jax import random
-from jax.typing import ArrayLike
-import os
+import numpy as np
 
-from .actor_critic import HyperParameters, ModelUpdateParams, ActorCritic, TrainingState
+from .actor_critic import HyperParameters, ModelUpdateParams, ActorCritic
 from ..mlp import MlpBody, ActorHead, CriticHead
+
+# Not necessary but prevents re-jitting when the same schedules are used
+linear_schedule = cache(optax.linear_schedule)
+constant_schedule = cache(optax.constant_schedule)
 
 
 def main(seed: int = 0) -> list[float]:
     env_name = 'CartPole-v1'
-    total_steps = 1000000
+    total_steps = 10
     hyper_parameters = HyperParameters(
-        actor_learning_rate=optax.linear_schedule(0.0002, 0.0, total_steps),
-        critic_learning_rate=optax.linear_schedule(0.001, 0.0, total_steps),
-        discount=optax.constant_schedule(0.99),
+        actor_learning_rate=linear_schedule(0.0002, 0.0, total_steps),
+        critic_learning_rate=linear_schedule(0.001, 0.0, total_steps),
+        discount=constant_schedule(0.99),
     )
 
     env = gym.make(env_name)  # render_mode='human'
@@ -29,7 +31,6 @@ def main(seed: int = 0) -> list[float]:
 
     # Create models
     actor_critic = create_actor_critic(hyper_parameters, action_space)
-    jit_actor_critic(actor_critic)
 
     # Initialize params
     rng_key, actor_critic_key = random.split(rng_key)
@@ -69,56 +70,27 @@ def main(seed: int = 0) -> list[float]:
             if len(total_rewards) % 100 == 99:
                 print(total_rewards[-1])
 
-    record_video("videos/rl-video", env_name, actor_critic, training_state, rng_key, 10)
+    # record_video("output/videos/rl-video", env_name, actor_critic, training_state, rng_key, 10)
 
     return total_rewards
 
 
-def record_video(file_path: str, env_name: str, actor_critic: ActorCritic, training_state: TrainingState, rng_key: ArrayLike, episodes: int):
-    env = gym.make(env_name, render_mode="rgb_array")
-    env = RecordVideo(
-        env,
-        os.path.dirname(file_path),
-        episode_trigger=lambda _: True,
-        name_prefix=os.path.basename(file_path))
-
-    for _ in range(episodes):
-        obs, _ = env.reset()
-        done = False
-
-        while not done:
-            rng_key, action_key = random.split(rng_key)
-            action = actor_critic.sample_action(training_state, obs, action_key)
-
-            obs, reward, terminated, truncated, _ = env.step(action.item())
-            done = terminated or truncated
-
-
 def create_actor_critic(hyper_parameters: HyperParameters, action_space: int) -> ActorCritic:
-    actor_model = nn.Sequential([
-        MlpBody(features=[64, 64]),
+    actor_model = nn.Sequential((
+        MlpBody(features=(64, 64)),
         ActorHead(actions=action_space),
-    ])
-    critic_model = nn.Sequential([
-        MlpBody(features=[64, 64]),
+    ))
+    critic_model = nn.Sequential((
+        MlpBody(features=(64, 64)),
         CriticHead(),
-    ])
+    ))
 
     return ActorCritic(actor_model, critic_model, hyper_parameters)
 
 
-def jit_actor_critic(actor_critic: ActorCritic):
-    """
-    Jits an actor critic in place
-    """
-    actor_critic.init = jax.jit(actor_critic.init, static_argnames="state_space")
-    actor_critic.sample_action = jax.jit(actor_critic.sample_action)
-    actor_critic.update_models = jax.jit(actor_critic.update_models)
-
-
 if __name__ == '__main__':
-    for index in range(1):
+    for index in range(2):
         print(f"Starting training run {index}")
         total_rewards = main(index)
-        # np_data = np.array(total_rewards, dtype=np.float32)
-        # np.save(f"metrics/results_{index}", np_data)
+        np_data = np.array(total_rewards, dtype=np.float32)
+        np.save(f"output/metrics/results_{index}", np_data)
