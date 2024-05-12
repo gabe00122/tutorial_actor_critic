@@ -29,11 +29,10 @@ class HyperParameters(NamedTuple):
 class ModelUpdateParams(NamedTuple):
     step: ArrayLike
 
-    # Just remember SARS(A)
-    obs: ArrayLike  # S
-    actions: ArrayLike  # A
-    rewards: ArrayLike  # R
-    next_obs: ArrayLike  # S
+    obs: ArrayLike
+    actions: ArrayLike
+    rewards: ArrayLike
+    next_obs: ArrayLike
     done: ArrayLike
 
 
