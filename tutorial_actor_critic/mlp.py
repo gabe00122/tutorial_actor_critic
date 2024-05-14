@@ -15,7 +15,7 @@ class MlpBody(nn.Module):
             x = nn.Dense(
                 feat,
                 name=f"mlp_layer_{i}",
-                kernel_init=nn.initializers.he_normal(),
+                kernel_init=nn.initializers.he_uniform(),
             )(x)
             x = self.activation(x)
         return x
@@ -29,13 +29,8 @@ class ActorHead(nn.Module):
         actor_logits = nn.Dense(
             self.actions,
             name="actor_head",
-            kernel_init=nn.initializers.variance_scaling(
-                2.0 / 100, "fan_in", "truncated_normal"
-            ),
+            kernel_init=nn.initializers.he_uniform(),
         )(inputs)
-
-        # if mask is not None:
-        #     actor_logits = jnp.where(mask, actor_logits, -jnp.inf)
 
         return actor_logits
 
@@ -46,8 +41,6 @@ class CriticHead(nn.Module):
         value = nn.Dense(
             1,
             name="critic_head",
-            kernel_init=nn.initializers.variance_scaling(
-                2.0 / 100, "fan_in", "truncated_normal"
-            ),
+            kernel_init=nn.initializers.he_uniform(),
         )(inputs)
         return jnp.squeeze(value)

@@ -7,7 +7,7 @@ def main():
     results = []
 
     for index in range(20):
-        data = np.load(f"output/metrics/results_{index}.npy")
+        data = np.load(f"output/metrics_tanh/results_{index}.npy")
         results.append(data)
 
     shortest_result = min([len(result) for result in results])

@@ -58,10 +58,10 @@ class ActorCritic:
 
     @partial(jax.jit, static_argnums=(0,))
     def sample_action(
-        self, training_state: TrainingState, obs: ArrayLike, key: ArrayLike
+        self, training_state: TrainingState, obs: ArrayLike, rng_key: ArrayLike
     ):
         logits = self.actor_model.apply(training_state.actor_params, obs)
-        return random.categorical(key, logits)
+        return random.categorical(rng_key, logits)
 
     def action_log_probability(self, actor_params, obs: ArrayLike, action: ArrayLike):
         logits = self.actor_model.apply(actor_params, obs)

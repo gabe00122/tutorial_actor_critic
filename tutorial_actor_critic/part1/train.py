@@ -5,6 +5,8 @@ import optax
 from flax import linen as nn
 from jax import random
 import numpy as np
+from pathlib import Path
+from .util import record_video
 
 from .actor_critic import HyperParameters, ModelUpdateParams, ActorCritic
 from ..mlp import MlpBody, ActorHead, CriticHead
@@ -16,10 +18,10 @@ constant_schedule = cache(optax.constant_schedule)
 
 def main(seed: int = 0) -> list[float]:
     env_name = 'CartPole-v1'
-    total_steps = 10
+    total_steps = 800_000
     hyper_parameters = HyperParameters(
-        actor_learning_rate=linear_schedule(0.0002, 0.0, total_steps),
-        critic_learning_rate=linear_schedule(0.001, 0.0, total_steps),
+        actor_learning_rate=linear_schedule(0.0001, 0.0, total_steps),
+        critic_learning_rate=linear_schedule(0.0005, 0.0, total_steps),
         discount=constant_schedule(0.99),
     )
 
@@ -70,7 +72,7 @@ def main(seed: int = 0) -> list[float]:
             if len(total_rewards) % 100 == 99:
                 print(total_rewards[-1])
 
-    # record_video("output/videos/rl-video", env_name, actor_critic, training_state, rng_key, 10)
+    record_video("output/videos/rl-video", env_name, actor_critic, training_state, rng_key, 10)
 
     return total_rewards
 
@@ -89,8 +91,10 @@ def create_actor_critic(hyper_parameters: HyperParameters, action_space: int) ->
 
 
 if __name__ == '__main__':
-    for index in range(2):
+    for index in range(1):
         print(f"Starting training run {index}")
         total_rewards = main(index)
         np_data = np.array(total_rewards, dtype=np.float32)
-        np.save(f"output/metrics/results_{index}", np_data)
+
+        # Path("output/metrics_tanh").mkdir(parents=True, exist_ok=True)
+        # np.save(f"output/metrics_tanh/results_{index}", np_data)
