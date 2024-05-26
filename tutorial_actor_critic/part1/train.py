@@ -1,42 +1,42 @@
-from functools import cache
-
 import gymnasium as gym
+import numpy as np
 import optax
 from flax import linen as nn
 from jax import random
-import numpy as np
-from pathlib import Path
+
+from . import actor_critic
 from .util import record_video
-
-from .actor_critic import HyperParameters, ModelUpdateParams, ActorCritic
 from ..mlp import MlpBody, ActorHead, CriticHead
-
-# Not necessary but prevents re-jitting when the same schedules are used
-linear_schedule = cache(optax.linear_schedule)
-constant_schedule = cache(optax.constant_schedule)
 
 
 def main(seed: int = 0) -> list[float]:
     env_name = 'CartPole-v1'
     total_steps = 800_000
-    hyper_parameters = HyperParameters(
-        actor_learning_rate=linear_schedule(0.0001, 0.0, total_steps),
-        critic_learning_rate=linear_schedule(0.0005, 0.0, total_steps),
-        discount=constant_schedule(0.99),
-    )
+
+    actor_learning_rate = optax.linear_schedule(0.0001, 0.0, total_steps)
+    critic_learning_rate = optax.linear_schedule(0.0005, 0.0, total_steps)
+    discount = 0.99
+    actor_features = (64, 64)
+    critic_features = (64, 64)
 
     env = gym.make(env_name)  # render_mode='human'
     action_space = env.action_space.n
     state_space = env.observation_space.shape[0]
 
-    rng_key = random.PRNGKey(seed)
+    actor_model = nn.Sequential((
+        MlpBody(features=actor_features),
+        ActorHead(actions=action_space),
+    ))
+    critic_model = nn.Sequential((
+        MlpBody(features=critic_features),
+        CriticHead(),
+    ))
 
-    # Create models
-    actor_critic = create_actor_critic(hyper_parameters, action_space)
+    rng_key = random.PRNGKey(seed)
 
     # Initialize params
     rng_key, actor_critic_key = random.split(rng_key)
-    training_state = actor_critic.init(state_space, actor_critic_key)
+    training_state = actor_critic.create_training_state(actor_model, critic_model, state_space, actor_critic_key)
 
     # metrics
     total_reward = 0
@@ -45,21 +45,23 @@ def main(seed: int = 0) -> list[float]:
     obs, _ = env.reset()
     for step in range(total_steps):
         rng_key, action_key = random.split(rng_key)
-        action = actor_critic.sample_action(training_state, obs, action_key)
+        action = actor_critic.sample_action(actor_model, training_state, obs, action_key)
 
         next_obs, reward, terminated, truncated, _ = env.step(action.item())
         done = terminated or truncated
 
-        model_update_params = ModelUpdateParams(
-            step=step,
+        update_args = actor_critic.UpdateArgs(
+            actor_learning_rate=actor_learning_rate(step),
+            critic_learning_rate=critic_learning_rate(step),
+            discount=discount,
             obs=obs,
-            actions=action,
-            rewards=reward,
+            action=action,
+            reward=reward,
             next_obs=next_obs,
             done=done,
         )
 
-        training_state, metrics = actor_critic.update_models(training_state, model_update_params)
+        training_state = actor_critic.update_models(actor_model, critic_model, training_state, update_args)
         obs = next_obs
 
         total_reward += reward
@@ -72,22 +74,9 @@ def main(seed: int = 0) -> list[float]:
             if len(total_rewards) % 100 == 99:
                 print(total_rewards[-1])
 
-    record_video("output/videos/rl-video", env_name, actor_critic, training_state, rng_key, 10)
+    record_video("output/videos/rl-video", env_name, actor_model, training_state, rng_key, 10)
 
     return total_rewards
-
-
-def create_actor_critic(hyper_parameters: HyperParameters, action_space: int) -> ActorCritic:
-    actor_model = nn.Sequential((
-        MlpBody(features=(64, 64)),
-        ActorHead(actions=action_space),
-    ))
-    critic_model = nn.Sequential((
-        MlpBody(features=(64, 64)),
-        CriticHead(),
-    ))
-
-    return ActorCritic(actor_model, critic_model, hyper_parameters)
 
 
 if __name__ == '__main__':

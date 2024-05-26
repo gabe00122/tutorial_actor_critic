@@ -1,10 +1,9 @@
+from typing import NamedTuple, Any
+
 import jax
+from flax import linen as nn
 from jax import random, numpy as jnp
 from jax.typing import ArrayLike
-from flax import linen as nn
-from optax import Schedule
-from typing import NamedTuple, Any
-from dataclasses import dataclass
 from functools import partial
 
 
@@ -14,126 +13,112 @@ class TrainingState(NamedTuple):
     critic_params: Any
 
 
-class Metrics(NamedTuple):
-    td_error: float
-    state_value: float
-
-
-class HyperParameters(NamedTuple):
-    discount: Schedule
-    actor_learning_rate: Schedule
-    critic_learning_rate: Schedule
-
-
-class ModelUpdateParams(NamedTuple):
-    step: ArrayLike
+class UpdateArgs(NamedTuple):
+    discount: float
+    actor_learning_rate: float
+    critic_learning_rate: float
 
     obs: ArrayLike
-    actions: ArrayLike
-    rewards: ArrayLike
+    action: ArrayLike
+    reward: ArrayLike
     next_obs: ArrayLike
     done: ArrayLike
 
 
-@dataclass(frozen=True)
-class ActorCritic:
-    actor_model: nn.Module
-    critic_model: nn.Module
-    hyper_parameters: HyperParameters
+def create_training_state(
+    actor_model, critic_model, state_space: int, key: ArrayLike
+) -> TrainingState:
+    dummy_state = jnp.zeros((state_space,), dtype=jnp.float32)
 
-    @partial(jax.jit, static_argnums=(0, 1))
-    def init(self, state_space: int, key: ArrayLike) -> TrainingState:
-        dummy_state = jnp.zeros((state_space,), dtype=jnp.float32)
+    key, actor_key, critic_key = random.split(key, 3)
+    actor_params = actor_model.init(actor_key, dummy_state)
+    critic_params = critic_model.init(critic_key, dummy_state)
 
-        key, actor_key, critic_key = random.split(key, 3)
-        actor_params = self.actor_model.init(actor_key, dummy_state)
-        critic_params = self.critic_model.init(critic_key, dummy_state)
+    training_state = TrainingState(
+        importance=jnp.float32(1.0),
+        actor_params=actor_params,
+        critic_params=critic_params,
+    )
+    return training_state
 
-        training_state = TrainingState(
-            importance=jnp.float32(1.0),
-            actor_params=actor_params,
-            critic_params=critic_params,
-        )
-        return training_state
 
-    @partial(jax.jit, static_argnums=(0,))
-    def sample_action(
-        self, training_state: TrainingState, obs: ArrayLike, rng_key: ArrayLike
-    ):
-        logits = self.actor_model.apply(training_state.actor_params, obs)
-        return random.categorical(rng_key, logits)
+@partial(jax.jit, static_argnums=0)
+def sample_action(actor_model, training_state, obs, rng_key):
+    logits = actor_model.apply(training_state.actor_params, obs)
+    return random.categorical(rng_key, logits)
 
-    def action_log_probability(self, actor_params, obs: ArrayLike, action: ArrayLike):
-        logits = self.actor_model.apply(actor_params, obs)
-        return nn.log_softmax(logits)[action]
 
-    @partial(jax.jit, static_argnums=(0,))
-    def update_models(
-        self, training_state: TrainingState, params: ModelUpdateParams
-    ) -> tuple[TrainingState, Metrics]:
-        actor_params = training_state.actor_params
-        critic_params = training_state.critic_params
-        importance = training_state.importance
-        step = params.step
+def temporal_difference_error(critic_model, critic_params, update_args):
+    state_value = critic_model.apply(critic_params, update_args.obs)
+    next_state_value = jax.lax.cond(
+        update_args.done,
+        lambda: 0.0,
+        lambda: update_args.discount
+        * critic_model.apply(critic_params, update_args.next_obs),
+    )
 
-        # Just remember SARSA expect we skip the final action here
-        obs = params.obs  # State
-        actions = params.actions  # Action
-        rewards = params.rewards  # Reward
-        next_obs = params.next_obs  # State
-        done = params.done  # Also State
+    estimated_reward = state_value - next_state_value
+    td_error = update_args.reward - estimated_reward
 
-        # Let's calculate are hyperparameters from the schedule
-        discount = self.hyper_parameters.discount(step)
-        actor_learning_rate = self.hyper_parameters.actor_learning_rate(step)
-        critic_learning_rate = self.hyper_parameters.critic_learning_rate(step)
+    return td_error
 
-        # Calculate the TD error
-        state_value = self.critic_model.apply(critic_params, obs)
-        td_error = rewards - state_value
-        td_error += jax.lax.cond(
-            done,
-            lambda: 0.0,  # if the episode is over our next predicted reward is always zero
-            lambda: discount * self.critic_model.apply(critic_params, next_obs)
-        )
 
-        # Update the critic
-        critic_gradient = jax.grad(self.critic_model.apply)(critic_params, obs)
-        critic_params = update_params(
-            critic_params,
-            critic_gradient,
-            critic_learning_rate * td_error,
-        )
+def update_critic(critic_model, critic_params, update_args, td_error):
+    critic_gradient = jax.grad(critic_model.apply)(critic_params, update_args.obs)
+    critic_params = update_params(
+        critic_params,
+        critic_gradient,
+        update_args.critic_learning_rate * td_error,
+    )
 
-        # Update the actor
-        actor_gradient = jax.grad(self.action_log_probability)(actor_params, obs, actions)
-        actor_params = update_params(
-            actor_params,
-            actor_gradient,
-            actor_learning_rate * importance * td_error,
-        )
+    return critic_params
 
-        # Record Metrics
-        metrics = Metrics(
-            td_error=td_error,
-            state_value=state_value,
-        )
 
-        importance = jax.lax.cond(
-            done,
-            lambda: 1.0,
-            lambda: importance * discount
-        )
+def action_log_probability(actor_model, actor_params, obs, action):
+    logits = actor_model.apply(actor_params, obs)
+    return nn.log_softmax(logits)[action]
 
-        return TrainingState(
-            importance=importance,
-            actor_params=actor_params,
-            critic_params=critic_params
-        ), metrics
+
+def update_actor(actor_model, actor_params, update_args, td_error, importance):
+    actor_gradient = jax.grad(action_log_probability, argnums=1)(
+        actor_model, actor_params, update_args.obs, update_args.action
+    )
+    actor_params = update_params(
+        actor_params,
+        actor_gradient,
+        update_args.actor_learning_rate * td_error * importance,
+    )
+
+    return actor_params
+
+
+@partial(jax.jit, static_argnums=(0, 1))
+def update_models(
+    actor_model,
+    critic_model,
+    training_state: TrainingState,
+    update_args: UpdateArgs,
+) -> TrainingState:
+    actor_params = training_state.actor_params
+    critic_params = training_state.critic_params
+    importance = training_state.importance
+
+    td_error = temporal_difference_error(critic_model, critic_params, update_args)
+    critic_params = update_critic(critic_model, critic_params, update_args, td_error)
+    actor_params = update_actor(
+        actor_model, actor_params, update_args, td_error, importance
+    )
+
+    importance = jax.lax.cond(
+        update_args.done, lambda: 1.0, lambda: importance * update_args.discount
+    )
+
+    return TrainingState(
+        importance=importance, actor_params=actor_params, critic_params=critic_params
+    )
 
 
 def update_params(params, grad, step_size):
     return jax.tree_map(
-        lambda param, grad_param: param + step_size * grad_param,
-        params, grad
+        lambda param, grad_param: param + step_size * grad_param, params, grad
     )
