@@ -5,7 +5,8 @@ Code for the blog post https://gabrielkeith.dev/blog/basic-actor-critic
 
 Train agents to solve simple gym tasks!
 
-[rl-video-episode-0.mp4](/assets/rl-video-episode-0.mp4)
+https://github.com/user-attachments/assets/26c182cb-d4e1-428f-8567-d4c0853c1866
+
 
 ## Prerequisites
 * Python 3.12
