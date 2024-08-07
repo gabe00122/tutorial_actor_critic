@@ -20,3 +20,6 @@ moviepy = "^1.0.3"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+train = "tutorial_actor_critic.part1.train:main"

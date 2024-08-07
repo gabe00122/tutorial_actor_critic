@@ -3,13 +3,14 @@ import numpy as np
 import optax
 from flax import linen as nn
 from jax import random
+from pathlib import Path
 
 from . import actor_critic
 from .util import record_video
 from ..mlp import MlpBody, ActorHead, CriticHead
 
 
-def main(seed: int = 0) -> list[float]:
+def train(seed: int = 0) -> list[float]:
     env_name = 'CartPole-v1'
     total_steps = 800_000
 
@@ -79,11 +80,15 @@ def main(seed: int = 0) -> list[float]:
     return total_rewards
 
 
-if __name__ == '__main__':
-    for index in range(1):
-        print(f"Starting training run {index}")
-        total_rewards = main(index)
-        np_data = np.array(total_rewards, dtype=np.float32)
+def main():
+    seed = 0
+    print(f"Starting training run: {seed}")
+    total_rewards = train(seed)
+    np_data = np.array(total_rewards, dtype=np.float32)
 
-        # Path("output/metrics_tanh").mkdir(parents=True, exist_ok=True)
-        # np.save(f"output/metrics_tanh/results_{index}", np_data)
+    Path("output/metrics").mkdir(parents=True, exist_ok=True)
+    np.save(f"output/metrics/results_{seed}", np_data)
+
+
+if __name__ == '__main__':
+    main()
